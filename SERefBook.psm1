@@ -7,6 +7,21 @@ Function Get-XmlDocument ( [String]$Path )
     Return $Ret
 }
 
+$DisplayNameMappings = @{}
+ForEach ( $Mapping in (Get-XmlDocument SE:\Localization\MyTexts.resx).root.data )
+{
+    $DisplayNameMappings[ $Mapping.name ] = $Mapping.value
+}
+Function Get-DisplayName ( [String]$DisplayName )
+{
+    If ( -not $DisplayNameMappings.ContainsKey( $DisplayName ) )
+    {
+        Write-Error -Message ("No display name mapping known for ""{0}""" -f $DisplayName)
+        Return $Null
+    }
+    Return $DisplayNameMappings[ $DisplayName ]
+}
+
 # ORES SECTION
 $Ores = @{}
 & {
@@ -23,6 +38,7 @@ $Ores = @{}
         $Ores[ $SubtypeId ] = New-Object PSObject -Property @{
             Name = $SubtypeId;
             FullName = $Name;
+            DisplayName = Get-DisplayName $PhysItem.DisplayName;
             #Mass = $Mass;
             Volume = $Volume;
             Density = 1.0/$Volume;
@@ -93,6 +109,7 @@ $Ingots = @{}
         $Ingots[ $SubtypeId ] = @{
             Name = $SubtypeId;
             FullName = $Name;
+            DisplayName = Get-DisplayName $PhysItem.DisplayName;
             #Mass = $Mass;
             Volume = $Volume;
             Density = 1.0/$Volume;
@@ -223,6 +240,7 @@ $Script:Components = @{}
             $Components[ $SubtypeId ] = @{
                 Name = $SubtypeId;
                 FullName = $Name;
+                DisplayName = Get-DisplayName $Comp.DisplayName;
                 Mass = $Mass;
                 Volume = $Volume;
             }
@@ -480,6 +498,7 @@ $CubeSizeScale = @{
                 TypeId = $TypeId;
                 SubtypeId = $SubtypeId;
                 Name = $Name;
+                DisplayName = Get-DisplayName $Def.DisplayName;
                 BlockSize = $Size;
                 IsAirTight = $IsAirTight;
                 
@@ -519,6 +538,10 @@ Function Get-Block
         [String]
         $Name,
         
+        [Parameter(ParameterSetName="DisplayName")]
+        [String]
+        $DisplayName,
+        
         # Allows star expansion
         [Parameter(ParameterSetName="Ids")]
         [String]
@@ -544,6 +567,11 @@ Function Get-Block
             "Name"
             {
                 $_Blocks.Values | Where-Object { $_.Name -like $Name }
+            }
+            
+            "DisplayName"
+            {
+                $_Blocks.Values | Where-Object { If ( $_.DisplayName -ne $Null ) { $_.DisplayName -like $DisplayName } }
             }
             
             "Ids"
