@@ -30,6 +30,20 @@ $Ores = @{}
     }
 }
 
+<# Ore object properties:
+    Name : String
+        Internal name for this particular ore, e.g. "Cobalt"
+        
+    FullName : String
+        Complete qualified ID for this ore, e.g. "Ore.Cobalt"
+    
+    Volume : Double
+        The specific volume of the ore, in Liters per Kilogram
+    
+    Density : Double
+        The density of the ore, in Kilograms per Liter
+#>
+$_Ores = $Ores # Protection against scoping problems
 Function Get-Ore
 {
     [CmdletBinding(DefaultParameterSetName="Name")]
@@ -48,16 +62,16 @@ Function Get-Ore
     {
         "Name"
         {
-            If ( -not $Ores.ContainsKey( $Name ) )
+            If ( -not $_Ores.ContainsKey( $Name ) )
             {
                 Throw New-Object Exception ("No such ore ""{0}""" -f $Name)
             }
-            Return $Ores[ $Name ]
+            Return $_Ores[ $Name ]
         }
         
         "All"
         {
-            Return $Ores.Values
+            Return $_Ores.Values
         }
     }
 }
@@ -79,7 +93,7 @@ $Ingots = @{}
         $Ingots[ $SubtypeId ] = @{
             Name = $SubtypeId;
             FullName = $Name;
-            Mass = $Mass;
+            #Mass = $Mass;
             Volume = $Volume;
             Density = 1.0/$Volume;
         }
@@ -116,9 +130,11 @@ $Ingots = @{}
             
             $RequiredOreAmount = $Preq / $ResultAmount
             $RequiredOreVolume = (Get-Ore $Type).Volume * $RequiredOreAmount
+            $RequiredOreVolumeRatio = $RequiredOreVolume / $Ingots[ $Type ].Volume
             
             $Ingots[ $Type ][ "RequiredOreMass" ] = $RequiredOreAmount
             $Ingots[ $Type ][ "RequiredOreVolume" ] = $RequiredOreVolume
+            $Ingots[ $Type ][ "RequiredOreVolumeRatio" ] = $RequiredOreVolumeRatio
         }
     }
     # Fix for gravel
@@ -133,6 +149,29 @@ $Ingots = @{}
     }
 }
 
+<# Ingot object properties:
+    Name : String
+        Internal name for this particular ingot, e.g. "Cobalt"
+        
+    FullName : String
+        Complete qualified ID for this ingot, e.g. "Ingot.Cobalt"
+    
+    Volume : Double
+        The specific volume of the ingot, in Liters per Kilogram
+    
+    Density : Double
+        The density of the ingot, in Kilograms per Liter
+    
+    RequiredOreMass : Double
+        With a stock refinery, the required mass in Kilograms of the corresponding ore which must be refined to produce 1kg of this ingot
+    
+    RequiredOreVolume : Double
+        With a stock refinery, the required volume in Liters of the corresponding ore which must be refined to produce 1kg of this ingot
+    
+    RequiredOreVolumeRatio : Double
+        With a stock refinery, the ratio of the Liters of corresponding ore required to produce 1L of this ingot
+#>
+$_Ingots = $Ingots # Protection against scoping problems
 Function Get-Ingot
 {
     [CmdletBinding(DefaultParameterSetName="Name")]
@@ -151,23 +190,23 @@ Function Get-Ingot
     {
         "Name"
         {
-            If ( -not $Ingots.ContainsKey( $Name ) )
+            If ( -not $_Ingots.ContainsKey( $Name ) )
             {
                 Throw New-Object Exception ("No such ingot ""{0}""" -f $Name)
             }
-            Return $Ingots[ $Name ]
+            Return $_Ingots[ $Name ]
         }
         
         "All"
         {
-            Return $Ingots.Values
+            Return $_Ingots.Values
         }
     }
 }
 
 # COMPONENTS SECTION
-$Components = @{}
-[String[]]$ComponentsBlackList = , "ZoneChip"
+$Script:Components = @{}
+[String[]]$ComponentsBlackList = , "ZoneChip" # TODO: Need better way of handling zone chips
 & {
     ForEach ( $File in Get-Item SE:\Components*.sbc )
     {
@@ -190,11 +229,12 @@ $Components = @{}
         }
     }
 
-    ForEach ( $Blueprint in (Get-XmlDocument SE:\Blueprints.sbc).Definitions.Blueprints.Blueprint )
+    ForEach ( $Blueprint in (Get-XmlDocument SE:\Blueprints.sbc).Definitions.Blueprints.Blueprint ) # TODO: Include economy blueprints?
     {
-        $TypeId = $Blueprint.Id.TypeId
-        $SubtypeId = $Blueprint.Id.SubtypeId
-        If ( -not $Components.ContainsKey( $SubtypeId ) ) { Continue; }
+        If ( -not $Blueprint.Result ) { Continue; } # We're only looking for ones that produce a single output at the moment
+        $TypeId = $Blueprint.Result.TypeId
+        $SubtypeId = $Blueprint.Result.SubtypeId
+        If ( $TypeId -ne "Component" -or -not $Components.ContainsKey( $SubtypeId ) ) { Continue; }
         
         $ResAmount = [Double]$Blueprint.Result.Amount
         $Requirements = [Hashtable[]]@( & {
@@ -226,11 +266,12 @@ $Components = @{}
             $RequiredIngotsVolume += $IngotVolume
             $RequiredOresMass += $OreMass
             $RequiredOresVolume += $OreVolume
-            $RequiredIngots.Add( $Preq.Ingot.Name, (New-Object PSObject -Property @{Mass = $IngotMass; Volume = $IngotVolume;}) )
-            $RequiredOres.Add( $Preq.Ingot.Name, (New-Object PSObject -Property @{Mass = $OreMass; Volume = $OreVolume;}) )
+            $RequiredIngots.Add( $Preq.Ingot.Name, (New-Object PSObject -Property @{Mass = $IngotMass; Volume = $IngotVolume; Definition = (Get-Ingot $Preq.Ingot.Name);}) )
+            $RequiredOres.Add( $Preq.Ingot.Name, (New-Object PSObject -Property @{Mass = $OreMass; Volume = $OreVolume; Definition = (Get-Ore $Preq.Ingot.Name);}) )
         }
         $Components[ $SubtypeId ][ "RequiredIngotsMass" ] = $RequiredIngotsMass
         $Components[ $SubtypeId ][ "RequiredIngotsVolume" ] = $RequiredIngotsVolume
+        # TODO: Figure out reliable way to ensure script runs on newer version of PS or .NET so we can cast from Dictionary to IReadOnlyDictionary
         $Components[ $SubtypeId ][ "RequiredIngots" ] = $RequiredIngots
         $Components[ $SubtypeId ][ "RequiredOresMass" ] = $RequiredOresMass
         $Components[ $SubtypeId ][ "RequiredOresVolume" ] = $RequiredOresVolume
@@ -245,6 +286,60 @@ $Components = @{}
     }
 }
 
+<# Component object properties:    
+    Name : String
+        Internal name for this particular component, e.g. "Girder"
+        
+    FullName : String
+        Complete qualified ID for this component, e.g. "Component.Girder"
+    
+    Mass : Double
+        Mass in Kilograms of 1 of this component
+    
+    Volume : Double
+        Volume in Liters that 1 of this component takes up in an inventory
+    
+    RequiredIngots : Dictionary<Key,Value>
+        Key : String
+            Name of the ingot
+        
+        Value : Object
+            Mass : Double
+                Required mass in Kilograms (or number of) of ingots to make this component
+            
+            Volume : Double
+                Required volume in Liters of ingots to make this component
+            
+            Definition : Object
+                The ingot object, as returned by Get-Ingot
+    
+    RequiredIngotsMass : Double
+        Total mass in Kilograms of all ingots required to make 1 of this component
+    
+    RequiredIngotsVolume : Double
+        Total volume in Liters of all ingots required to make 1 of this component
+    
+    RequiredOres : Dictionary<Key,Value>
+        Key : String
+            Name of the ore
+        
+        Value : Object
+            Mass : Double
+                Required mass in Kilograms (or number of) of ore to make this component
+            
+            Volume : Double
+                Required volume in Liters of ore to make this component
+            
+            Definition : Object
+                The ore object, as returned by Get-Ore
+            
+    RequiredOresMass : Double
+        Total mass in Kilograms of all ores required to make 1 of this component
+    
+    RequiredOresVolume : Double
+        Total volume in Liters of all ores required to make 1 of this component
+#>
+$_Components = $Components # Protection against scoping problems
 Function Get-Component
 {
     [CmdletBinding(DefaultParameterSetName="Name")]
@@ -263,16 +358,16 @@ Function Get-Component
     {
         "Name"
         {
-            If ( -not $Components.ContainsKey( $Name ) )
+            If ( -not $_Components.ContainsKey( $Name ) )
             {
                 Throw New-Object Exception ("No such component ""{0}""" -f $Name)
             }
-            Return $Components[ $Name ]
+            Return $_Components[ $Name ]
         }
         
         "All"
         {
-            Return $Components.Values
+            Return $_Components.Values
         }
     }
 }
@@ -280,19 +375,26 @@ Function Get-Component
 # BLOCKS SECTION
 
 $Blocks = @{}
+$CubeSizeScale = @{
+    Small = 0.5;
+    Large = 2.5;
+}
 
 & { 
     ForEach ( $File in Get-Item SE:\CubeBlocks\CubeBlocks*.sbc )
     {
         ForEach ( $Def in (Get-XmlDocument $File.FullName).Definitions.CubeBlocks.Definition )
         {
+            # TODO: Special handling, try to eliminate later
+            If ( @( $Def.Components.Component | %{ $_.Subtype } ) -contains "ZoneChip" ) { Continue; }
+            
             $TypeId = $Def.Id.TypeId
             $SubtypeId = $Def.Id.SubtypeId
             $Name = ($TypeId + '.' + $SubtypeId).Trim( '.' )
             $Size = $Def.CubeSize
             $IsAirTight = $Def.IsAirTight -eq "true"
             
-            $Components = @{} # Key: component subtype string, Value: integer amount used
+            $Components = @{} # Key: component subtype string, Value: integer number of components used
             ForEach ( $Comp in [System.Xml.XmlElement[]]@($Def.Components.Component) )
             {
                 $Subtype = $Comp.Subtype
@@ -304,20 +406,109 @@ $Blocks = @{}
                 $Components[ $Subtype ] += $Amount
             }
             
-            [Double]$TotalMass = 0.0 # Inherently identical to RequiredComponentsMass
-            [Double]$RequiredComponentsVolume = 0.0
-            $Ingots = @{} # Key: ingot subtype string, value: float amount used
-            ForEach ( $CompName in $Components.Keys )
+            # Calculate total components properties
+            $RequiredComponents = New-Object ([System.Collections.Generic.Dictionary[String,PSObject]]).FullName
+            ForEach ( $CompName in @($Components.Keys | Sort-Object) )
             {
-                $Comp = Get-Component $CompName
-                $Amount = $Components[ $CompName ]
-                $TotalMass += $Comp.Mass * $Amount
-                $RequiredComponentsVolume += $Comp.Volume * $Amount
+                $Number = $Components[ $CompName ]
+                $CompDef = Get-Component $CompName
+                [Double]$CompMass = $Number * $CompDef.Mass
+                [Double]$CompVolume = $Number * $CompDef.Volume
+                $RequiredComponents.Add( $CompName, (New-Object PSObject -Property @{
+                    Number = $Number;
+                    Mass = $CompMass;
+                    Volume = $CompVolume;
+                    Definition = $CompDef;
+                }) )
             }
-        }
-    }
+            [Double]$RequiredComponentsMass = ($RequiredComponents.Values | Measure-Object -Sum -Property Mass).Sum
+            [Double]$RequiredComponentsVolume = ($RequiredComponents.Values | Measure-Object -Sum -Property Volume).Sum
+            
+            # Calculate total ingots & ores properties
+            $AmountsOfIngot = @{}
+            ForEach ( $Component in $RequiredComponents.Values )
+            {
+                ForEach ( $Ingot in $Component.Definition.RequiredIngots.Values )
+                {
+                    $IngotName = $Ingot.Definition.Name
+                    If ( -not $AmountsOfIngot.ContainsKey( $IngotName ) )
+                    {
+                        $AmountsOfIngot[ $IngotName ] = 0.0
+                    }
+                    $AmountsOfIngot[ $IngotName ] += $Component.Number * $Ingot.Mass;
+                }
+            }
+            
+            $RequiredIngots = New-Object ([System.Collections.Generic.Dictionary[String,PSObject]]).FullName
+            $RequiredOres = New-Object ([System.Collections.Generic.Dictionary[String,PSObject]]).FullName
+            ForEach ( $IngotName in @($AmountsOfIngot.Keys | Sort-Object) )
+            {
+                $IngotDef = Get-Ingot $IngotName
+                $IngotMass = $AmountsOfIngot[ $IngotName ]
+                $IngotVolume = $IngotMass * $IngotDef.Volume
+                $OreMass = $IngotMass * $IngotDef.RequiredOreMass
+                $OreVolume = $IngotMass * $IngotDef.RequiredOreVolume
+                
+                $RequiredIngots.Add( $IngotName, (New-Object PSObject -Property @{
+                    Mass = $IngotMass;
+                    Volume = $IngotVolume;
+                    Definition = $IngotDef;
+                }) )
+                $RequiredOres.Add( $IngotName, (New-Object PSObject -Property @{
+                    Mass = $OreMass;
+                    Volume = $OreVolume;
+                    Definition = (Get-Ore $IngotName);
+                }) )
+            }
+            [Double]$RequiredIngotsMass = ($RequiredIngots.Values | Measure-Object -Sum -Property Mass).Sum
+            [Double]$RequiredIngotsVolume = ($RequiredIngots.Values | Measure-Object -Sum -Property Volume).Sum
+            [Double]$RequiredOresMass = ($RequiredOres.Values | Measure-Object -Sum -Property Mass).Sum
+            [Double]$RequiredOresVolume = ($RequiredOres.Values | Measure-Object -Sum -Property Volume).Sum
+            
+            [Double]$BlockVolume = & {
+                [Double]$Ret = 1.0
+                [Double]$Scale = $CubeSizeScale[ $Size ]
+                ForEach ( $Axis in "x", "y", "z" )
+                {
+                    [Double]$AxisSize = $Def.Size.$Axis
+                    $Ret *= $AxisSize * $Scale
+                }
+                $Ret
+            }
+            
+            $BlockObject = New-Object PSObject -Property @{
+                TypeId = $TypeId;
+                SubtypeId = $SubtypeId;
+                Name = $Name;
+                BlockSize = $Size;
+                IsAirTight = $IsAirTight;
+                
+                # Not Mass, we're adding that as an AliasProperty later
+                Volume = $BlockVolume;
+                Density = $RequiredComponentsMass / $BlockVolume;
+                
+                RequiredComponents = $RequiredComponents;
+                RequiredComponentsMass = $RequiredComponentsMass;
+                RequiredComponentsVolume = $RequiredComponentsVolume;
+                
+                RequiredIngots = $RequiredIngots;
+                RequiredIngotsMass = $RequiredIngotsMass;
+                RequiredIngotsVolume = $RequiredIngotsVolume;
+                
+                RequiredOres = $RequiredOres;
+                RequiredOresMass = $RequiredOresMass;
+                RequiredOresVolume = $RequiredOresVolume;
+            } | Add-Member -MemberType AliasProperty -Name Mass -Value RequiredComponentsMass -PassThru
+            
+            $Blocks[ $Name ] = $BlockObject
+        } # End per-block
+    } # End per-file
 }
 
+<# Block object properties:
+    
+#>
+$_Blocks = $Blocks
 Function Get-Block
 {
     [CmdletBinding(DefaultParameterSetName="Name")]
@@ -328,7 +519,16 @@ Function Get-Block
         [String]
         $Name,
         
-        [Parameter(Position=1)]
+        # Allows star expansion
+        [Parameter(ParameterSetName="Ids")]
+        [String]
+        $TypeId = "*",
+        
+        # Allows star expansion
+        [Parameter(ParameterSetName="Ids")]
+        [String]
+        $SubtypeId = "*",
+        
         [ValidateSet("*","Small","Large")]
         [String]
         $BlockSize = "*",
@@ -337,6 +537,26 @@ Function Get-Block
         [Switch]
         $All
     )
+    
+    & { 
+        Switch ( $PSCmdlet.ParameterSetName )
+        {
+            "Name"
+            {
+                $_Blocks.Values | Where-Object { $_.Name -like $Name }
+            }
+            
+            "Ids"
+            {
+                $_Blocks.Values | Where-Object { $_.TypeId -like $TypeId -and $_.SubtypeId -like $SubtypeId }
+            }
+            
+            "All"
+            {
+                $_Blocks.Values
+            }
+        } 
+    } | Where-Object { $_.BlockSize -like $BlockSize } | Sort-Object -Property TypeId, BlockSize, SubtypeId
 }
 
 Export-ModuleMember Get-Ore, Get-Ingot, Get-Component, Get-Block
