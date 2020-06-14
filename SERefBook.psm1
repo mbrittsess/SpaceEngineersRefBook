@@ -18,12 +18,14 @@ $Ores = @{}
         $Name = $TypeId + '.' + $SubtypeId
         
         [Double]$Mass = $PhysItem.Mass
+        If ( $Mass -ne 1.0 ) { Throw New-Object Exception ("Assertion failure: ore ""{0}"" has non-unit mass ({1:F3}kg)" -f $SubtypeId, $Mass) }
         [Double]$Volume = $PhysItem.Volume
         $Ores[ $SubtypeId ] = New-Object PSObject -Property @{
             Name = $SubtypeId;
             FullName = $Name;
-            Mass = $Mass;
+            #Mass = $Mass;
             Volume = $Volume;
+            Density = 1.0/$Volume;
         }
     }
 }
@@ -72,12 +74,14 @@ $Ingots = @{}
         $Name = $TypeId + '.' + $SubtypeId
         
         [Double]$Mass = $PhysItem.Mass
+        If ( $Mass -ne 1.0 ) { Throw New-Object Exception ("Assertion failure: ingot ""{0}"" has non-unit mass ({1:F3}kg)" -f $SubtypeId, $Mass) }
         [Double]$Volume = $PhysItem.Volume
         $Ingots[ $SubtypeId ] = @{
             Name = $SubtypeId;
             FullName = $Name;
             Mass = $Mass;
             Volume = $Volume;
+            Density = 1.0/$Volume;
         }
     }
     ForEach ( $Blueprint in (Get-XmlDocument SE:\Blueprints.sbc).Definitions.Blueprints.Blueprint )
@@ -111,10 +115,9 @@ $Ingots = @{}
             }
             
             $RequiredOreAmount = $Preq / $ResultAmount
-            $RequiredOreMass = (Get-Ore $Type).Mass * $RequiredOreAmount
             $RequiredOreVolume = (Get-Ore $Type).Volume * $RequiredOreAmount
             
-            $Ingots[ $Type ][ "RequiredOreMass" ] = $RequiredOreMass
+            $Ingots[ $Type ][ "RequiredOreMass" ] = $RequiredOreAmount
             $Ingots[ $Type ][ "RequiredOreVolume" ] = $RequiredOreVolume
         }
     }
@@ -215,7 +218,7 @@ $Components = @{}
         ForEach ( $Preq in ($Requirements | Sort-Object -Property @{Expression={$_.Ingot.Name};Ascending=$True;}) )
         {
             $Prerequisites[ $Preq.Ingot.Name ] = $Preq.Amount
-            $IngotMass = $Preq.Amount * $Preq.Ingot.Mass
+            $IngotMass = $Preq.Amount
             $IngotVolume = $Preq.Amount * $Preq.Ingot.Volume
             $OreMass = $Preq.Amount * $Preq.Ingot.RequiredOreMass
             $OreVolume = $Preq.Amount * $Preq.Ingot.RequiredOreVolume
