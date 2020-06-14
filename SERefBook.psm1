@@ -87,7 +87,7 @@ Function Get-Ore
         
         "All"
         {
-            Return $_Ores.Values
+            Return $_Ores.Values | Sort-Object -Property Name
         }
     }
 }
@@ -216,7 +216,7 @@ Function Get-Ingot
         
         "All"
         {
-            Return $_Ingots.Values
+            Return $_Ingots.Values | Sort-Object -Property Name
         }
     }
 }
@@ -385,7 +385,7 @@ Function Get-Component
         
         "All"
         {
-            Return $_Components.Values
+            Return $_Components.Values | Sort-Object -Property Name
         }
     }
 }
