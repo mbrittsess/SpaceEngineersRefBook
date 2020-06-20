@@ -483,6 +483,8 @@ $CubeSizeScale = @{
             [Double]$RequiredOresMass = ($RequiredOres.Values | Measure-Object -Sum -Property Mass).Sum
             [Double]$RequiredOresVolume = ($RequiredOres.Values | Measure-Object -Sum -Property Volume).Sum
             
+            $BlockSize = @{}
+            $BlockRealSize = @{}
             [Double]$BlockVolume = & {
                 [Double]$Ret = 1.0
                 [Double]$Scale = $CubeSizeScale[ $Size ]
@@ -490,6 +492,8 @@ $CubeSizeScale = @{
                 {
                     [Double]$AxisSize = $Def.Size.$Axis
                     $Ret *= $AxisSize * $Scale
+                    $BlockSize[ $Axis.ToUpper() ] = [Int32]$Def.Size.$Axis
+                    $BlockRealSize[ $Axis.ToUpper() ] = $AxisSize * $Scale
                 }
                 $Ret
             }
@@ -505,6 +509,9 @@ $CubeSizeScale = @{
                 # Not Mass, we're adding that as an AliasProperty later
                 Volume = $BlockVolume;
                 Density = $RequiredComponentsMass / $BlockVolume;
+                
+                Size = New-Object PSObject -Property $BlockRealSize;
+                BlocksSize = New-Object PSObject -Property $BlockSize;
                 
                 RequiredComponents = $RequiredComponents;
                 RequiredComponentsMass = $RequiredComponentsMass;
